@@ -25,6 +25,7 @@ class WpAutoUpload
         add_action('admin_menu', array($this, 'addAdminMenu'));
 
         add_filter('wp_insert_post_data', array($this, 'savePost'), 10, 2);
+        add_action('save_post', array($this, 'saveFeaturedImage'), 10, 3);
     }
 
     /**
@@ -55,6 +56,76 @@ class WpAutoUpload
             $data['post_content'] = $content;
         }
         return $data;
+    }
+
+    /**
+     * Upload featured image if set with an external URL.
+     *
+     * @param int     $post_id
+     * @param WP_Post $post
+     * @param bool    $update
+     */
+    public function saveFeaturedImage($post_id, $post, $update)
+    {
+        if (wp_is_post_revision($post_id) ||
+            wp_is_post_autosave($post_id) ||
+            (defined('DOING_AJAX') && DOING_AJAX) ||
+            (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)) {
+            return;
+        }
+
+        $excludePostTypes = self::getOption('exclude_post_types');
+        if (is_array($excludePostTypes) && in_array($post->post_type, $excludePostTypes, true)) {
+            return;
+        }
+
+        if (has_post_thumbnail($post_id)) {
+            return;
+        }
+
+        $featuredUrl = $this->getFeaturedImageUrl($post_id);
+        if (!$featuredUrl) {
+            return;
+        }
+
+        $postData = array(
+            'ID' => $post->ID,
+            'post_date_gmt' => $post->post_date_gmt,
+            'post_name' => $post->post_name,
+        );
+
+        $uploader = new ImageUploader($featuredUrl, get_the_title($post_id), $postData);
+        $uploadedImage = $uploader->save();
+        if (!$uploadedImage || empty($uploadedImage['attachment_id'])) {
+            return;
+        }
+
+        set_post_thumbnail($post_id, $uploadedImage['attachment_id']);
+    }
+
+    /**
+     * Get featured image URL from known meta keys.
+     *
+     * @param int $post_id
+     * @return string|null
+     */
+    public function getFeaturedImageUrl($post_id)
+    {
+        $metaKeys = apply_filters('aui_featured_image_meta_keys', array(
+            '_thumbnail_ext_url',
+            '_thumbnail_url',
+            'featured_image_url',
+            'featured_image',
+        ));
+
+        foreach ((array) $metaKeys as $key) {
+            $value = get_post_meta($post_id, $key, true);
+            if ($value && filter_var($value, FILTER_VALIDATE_URL)) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
