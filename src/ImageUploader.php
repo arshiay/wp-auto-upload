@@ -240,12 +240,12 @@ class ImageUploader
             return new WP_Error('aui_image_save_failed', 'AUI: Image save to upload dir failed.');
         }
 
-        $this->attachImage($image);
+        $image['attachment_id'] = $this->attachImage($image);
 
         if ($this->isNeedToResize() && ($resized = $this->resizeImage($image))) {
             $image['url'] = $resized['url'];
             $image['path'] = $resized['path'];
-            $this->attachImage($image);
+            $image['attachment_id'] = $this->attachImage($image);
         }
 
         return $image;
@@ -266,12 +266,18 @@ class ImageUploader
             'post_status' => 'inherit'
         );
         $attach_id = wp_insert_attachment($attachment, $image['path'], $this->post['ID']);
+        if (!$attach_id) {
+            return false;
+        }
         if (!function_exists('wp_generate_attachment_metadata')) {
             include_once( ABSPATH . 'wp-admin/includes/image.php' );
         }
         $attach_data = wp_generate_attachment_metadata($attach_id, $image['path']);
+        if (!wp_update_attachment_metadata($attach_id, $attach_data)) {
+            return false;
+        }
 
-        return wp_update_attachment_metadata($attach_id, $attach_data);
+        return $attach_id;
     }
 
     /**
